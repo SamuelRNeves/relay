@@ -1,0 +1,39 @@
+package dev.samuelneves.relay.endpoint;
+
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
+
+import java.net.URI;
+import java.util.List;
+
+@RestController
+@RequestMapping("/endpoints")
+public class EndpointController {
+
+    private final EndpointRepository repository;
+
+    public EndpointController(EndpointRepository repository) {
+        this.repository = repository;
+    }
+
+    @PostMapping
+    public ResponseEntity<EndpointResponse> create(@Valid @RequestBody CreateEndpointRequest request) {
+        Endpoint saved = repository.save(new Endpoint(request.url(), request.eventTypes()));
+
+        URI location = ServletUriComponentsBuilder.fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(saved.getId())
+                .toUri();
+
+        return ResponseEntity.created(location).body(EndpointResponse.from(saved));
+    }
+
+    @GetMapping
+    public List<EndpointResponse> list() {
+        return repository.findAll().stream()
+                .map(EndpointResponse::from)
+                .toList();
+    }
+}
