@@ -7,6 +7,7 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
 
+/** Historico imutavel: uma linha por chamada HTTP feita a um destino. */
 @Entity
 @Table(name = "delivery_attempts")
 public class DeliveryAttempt {
@@ -14,6 +15,11 @@ public class DeliveryAttempt {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    // Nulo apenas nas tentativas feitas antes da fila existir (etapa 1)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "delivery_id")
+    private Delivery delivery;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "event_id")
@@ -43,29 +49,23 @@ public class DeliveryAttempt {
         // exigido pelo JPA
     }
 
-    private DeliveryAttempt(Event event, Endpoint endpoint, boolean success,
-                            Integer statusCode, String errorMessage, long durationMs) {
-        this.event = event;
-        this.endpoint = endpoint;
-        this.success = success;
-        this.statusCode = statusCode;
-        this.errorMessage = errorMessage;
-        this.durationMs = durationMs;
+    private DeliveryAttempt(Delivery delivery, SendResult result) {
+        this.delivery = delivery;
+        this.event = delivery.getEvent();
+        this.endpoint = delivery.getEndpoint();
+        this.success = result.success();
+        this.statusCode = result.statusCode();
+        this.errorMessage = result.error();
+        this.durationMs = result.durationMs();
         this.attemptedAt = Instant.now();
     }
 
-    /** O destino respondeu com algum status HTTP (2xx conta como sucesso). */
-    public static DeliveryAttempt withResponse(Event event, Endpoint endpoint, int statusCode, long durationMs) {
-        boolean ok = statusCode >= 200 && statusCode < 300;
-        return new DeliveryAttempt(event, endpoint, ok, statusCode, null, durationMs);
-    }
-
-    /** Nao houve resposta HTTP: timeout, erro de rede etc. */
-    public static DeliveryAttempt withError(Event event, Endpoint endpoint, String errorMessage, long durationMs) {
-        return new DeliveryAttempt(event, endpoint, false, null, errorMessage, durationMs);
+    static DeliveryAttempt of(Delivery delivery, SendResult result) {
+        return new DeliveryAttempt(delivery, result);
     }
 
     public UUID getId() { return id; }
+    public Delivery getDelivery() { return delivery; }
     public Event getEvent() { return event; }
     public Endpoint getEndpoint() { return endpoint; }
     public boolean isSuccess() { return success; }

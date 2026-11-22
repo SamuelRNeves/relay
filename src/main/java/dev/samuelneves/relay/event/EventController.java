@@ -29,7 +29,8 @@ public class EventController {
                 .buildAndExpand(response.id())
                 .toUri();
 
-        return ResponseEntity.created(location).body(response);
+        // 202 Accepted: o evento foi aceito, mas a entrega acontece depois, pelo worker
+        return ResponseEntity.accepted().location(location).body(response);
     }
 
     @GetMapping("/{id}")

@@ -1,10 +1,8 @@
 package dev.samuelneves.relay.delivery;
 
-import dev.samuelneves.relay.endpoint.Endpoint;
-import dev.samuelneves.relay.event.Event;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -13,48 +11,42 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
-/** Faz uma tentativa de entrega HTTP de um evento a um endpoint e registra o resultado. */
-@Service
-public class DeliveryService {
+/** Faz a chamada HTTP de uma entrega. Nao toca no banco: so envia e mede. */
+@Component
+public class WebhookSender {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
 
     private final RestClient restClient;
-    private final DeliveryAttemptRepository attempts;
 
-    public DeliveryService(DeliveryAttemptRepository attempts) {
-        this.attempts = attempts;
-
-        // Sem timeout, um destino lento prenderia a thread indefinidamente
+    public WebhookSender() {
+        // Sem timeout, um destino lento prenderia o worker indefinidamente
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(CONNECT_TIMEOUT);
         factory.setReadTimeout(READ_TIMEOUT);
         this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
-    public DeliveryAttempt deliver(Event event, Endpoint endpoint) {
+    public SendResult send(DeliveryJob job) {
         long start = System.nanoTime();
-        DeliveryAttempt attempt;
-
         try {
             int status = restClient.post()
-                    .uri(endpoint.getUrl())
+                    .uri(job.endpointUrl())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .header("X-Relay-Event-Id", event.getId().toString())
-                    .header("X-Relay-Event-Type", event.getType())
-                    .body(new WebhookMessage(event.getId(), event.getType(), event.getCreatedAt(), event.getPayload()))
+                    // O destino usa este id para ignorar entregas repetidas (idempotencia)
+                    .header("X-Relay-Event-Id", job.eventId().toString())
+                    .header("X-Relay-Event-Type", job.eventType())
+                    .body(new WebhookMessage(job.eventId(), job.eventType(), job.eventCreatedAt(), job.payload()))
                     // exchange devolve o status sem lancar excecao em 4xx/5xx:
-                    // para nos, erro do destino e um resultado a registrar, nao uma falha do Relay
+                    // erro do destino e um resultado a registrar, nao uma falha do Relay
                     .exchange((request, response) -> response.getStatusCode().value());
 
-            attempt = DeliveryAttempt.withResponse(event, endpoint, status, elapsedMs(start));
+            return SendResult.response(status, elapsedMs(start));
         } catch (RestClientException e) {
             // Sem resposta HTTP: timeout, DNS, conexao recusada...
-            attempt = DeliveryAttempt.withError(event, endpoint, describe(e), elapsedMs(start));
+            return SendResult.failure(describe(e), elapsedMs(start));
         }
-
-        return attempts.save(attempt);
     }
 
     private static long elapsedMs(long startNanos) {

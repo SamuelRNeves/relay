@@ -1,6 +1,6 @@
 package dev.samuelneves.relay.event;
 
-import dev.samuelneves.relay.delivery.DeliveryAttemptResponse;
+import dev.samuelneves.relay.delivery.DeliveryResponse;
 
 import java.time.Instant;
 import java.util.List;
@@ -12,9 +12,9 @@ public record EventResponse(
         String type,
         Map<String, Object> payload,
         Instant createdAt,
-        List<DeliveryAttemptResponse> attempts
+        List<DeliveryResponse> deliveries
 ) {
-    public static EventResponse from(Event event, List<DeliveryAttemptResponse> attempts) {
-        return new EventResponse(event.getId(), event.getType(), event.getPayload(), event.getCreatedAt(), attempts);
+    public static EventResponse from(Event event, List<DeliveryResponse> deliveries) {
+        return new EventResponse(event.getId(), event.getType(), event.getPayload(), event.getCreatedAt(), deliveries);
     }
 }

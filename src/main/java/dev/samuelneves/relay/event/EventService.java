@@ -1,16 +1,16 @@
 package dev.samuelneves.relay.event;
 
-import dev.samuelneves.relay.delivery.DeliveryAttempt;
+import dev.samuelneves.relay.delivery.Delivery;
 import dev.samuelneves.relay.delivery.DeliveryAttemptRepository;
 import dev.samuelneves.relay.delivery.DeliveryAttemptResponse;
-import dev.samuelneves.relay.delivery.DeliveryService;
-import dev.samuelneves.relay.endpoint.Endpoint;
+import dev.samuelneves.relay.delivery.DeliveryRepository;
+import dev.samuelneves.relay.delivery.DeliveryResponse;
 import dev.samuelneves.relay.endpoint.EndpointRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -19,42 +19,46 @@ public class EventService {
 
     private final EventRepository events;
     private final EndpointRepository endpoints;
+    private final DeliveryRepository deliveries;
     private final DeliveryAttemptRepository attempts;
-    private final DeliveryService deliveryService;
 
     public EventService(EventRepository events,
                         EndpointRepository endpoints,
-                        DeliveryAttemptRepository attempts,
-                        DeliveryService deliveryService) {
+                        DeliveryRepository deliveries,
+                        DeliveryAttemptRepository attempts) {
         this.events = events;
         this.endpoints = endpoints;
+        this.deliveries = deliveries;
         this.attempts = attempts;
-        this.deliveryService = deliveryService;
     }
 
     /**
-     * Etapa 1: entrega sincrona, dentro da propria requisicao.
-     * De proposito NAO e @Transactional: manter uma transacao aberta durante chamadas HTTP
-     * prenderia uma conexao do banco enquanto esperamos destinos possivelmente lentos.
-     * Cada save abaixo e uma transacao curta e independente.
+     * So enfileira: salva o evento e uma entrega PENDING por endpoint inscrito.
+     * Tudo numa transacao, entao nunca existe evento sem as entregas, nem o contrario.
+     * Aqui @Transactional e seguro porque nao ha nenhuma chamada HTTP: o worker cuida disso.
      */
+    @Transactional
     public EventResponse publish(PublishEventRequest request) {
         Event event = events.save(new Event(request.type(), request.payload()));
 
-        List<DeliveryAttemptResponse> results = new ArrayList<>();
-        for (Endpoint endpoint : endpoints.findActiveSubscribedTo(event.getType())) {
-            DeliveryAttempt attempt = deliveryService.deliver(event, endpoint);
-            results.add(DeliveryAttemptResponse.from(attempt));
-        }
+        List<DeliveryResponse> queued = endpoints.findActiveSubscribedTo(event.getType()).stream()
+                .map(endpoint -> deliveries.save(new Delivery(event, endpoint)))
+                .map(DeliveryResponse::from)
+                .toList();
 
-        return EventResponse.from(event, results);
+        return EventResponse.from(event, queued);
     }
 
+    @Transactional(readOnly = true)
     public EventResponse find(UUID id) {
         Event event = events.findById(id).orElseThrow(() -> notFound(id));
-        return EventResponse.from(event, attemptsOf(id));
+        List<DeliveryResponse> current = deliveries.findByEvent_IdOrderByCreatedAtAsc(id).stream()
+                .map(DeliveryResponse::from)
+                .toList();
+        return EventResponse.from(event, current);
     }
 
+    @Transactional(readOnly = true)
     public List<DeliveryAttemptResponse> attemptsOf(UUID eventId) {
         if (!events.existsById(eventId)) {
             throw notFound(eventId);
