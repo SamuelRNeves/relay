@@ -27,21 +27,11 @@ public class RetryPolicy {
 
     /** O gerador aleatorio e injetavel para os testes serem deterministicos. */
     RetryPolicy(List<Duration> delays, DoubleSupplier random) {
-        if (delays.isEmpty()) {
+        if (delays == null || delays.isEmpty()) {
             throw new IllegalArgumentException("Informe ao menos um intervalo de retry");
         }
         this.delays = List.copyOf(delays);
         this.random = random;
-    }
-
-    public static RetryPolicy defaults() {
-        return new RetryPolicy(List.of(
-                Duration.ofSeconds(10),
-                Duration.ofSeconds(30),
-                Duration.ofMinutes(2),
-                Duration.ofMinutes(10),
-                Duration.ofMinutes(30)
-        ));
     }
 
     /** Total de tentativas: a primeira mais um retry para cada intervalo. */

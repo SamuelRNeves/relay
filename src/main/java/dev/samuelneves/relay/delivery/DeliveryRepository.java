@@ -1,6 +1,8 @@
 package dev.samuelneves.relay.delivery;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -29,4 +31,26 @@ public interface DeliveryRepository extends JpaRepository<Delivery, UUID> {
     List<Delivery> findDueForUpdate(@Param("now") Instant now, @Param("limit") int limit);
 
     List<Delivery> findByEvent_IdOrderByCreatedAtAsc(UUID eventId);
+
+    List<Delivery> findByStatusOrderByUpdatedAtDesc(DeliveryStatus status, Pageable pageable);
+
+    List<Delivery> findByStatusAndEndpoint_IdOrderByUpdatedAtDesc(DeliveryStatus status, UUID endpointId, Pageable pageable);
+
+    /**
+     * Devolve para a fila, num unico UPDATE, todas as entregas mortas de um endpoint.
+     * Em JPQL (nomes de entidade e atributo, nao de tabela). Mais eficiente que carregar
+     * milhares de entidades so para mudar um campo em cada uma.
+     */
+    @Modifying
+    @Query("""
+            UPDATE Delivery d
+            SET d.status = dev.samuelneves.relay.delivery.DeliveryStatus.PENDING,
+                d.attemptCount = 0,
+                d.nextAttemptAt = :now,
+                d.lockedUntil = null,
+                d.updatedAt = :now
+            WHERE d.endpoint.id = :endpointId
+              AND d.status = dev.samuelneves.relay.delivery.DeliveryStatus.DEAD
+            """)
+    int requeueDeadByEndpoint(@Param("endpointId") UUID endpointId, @Param("now") Instant now);
 }

@@ -85,6 +85,22 @@ public class Delivery {
         finishAttempt(DeliveryStatus.DEAD, statusCode, error);
     }
 
+    /**
+     * Devolve uma entrega morta para a fila, com um ciclo de tentativas novo.
+     * O historico das tentativas anteriores continua em delivery_attempts.
+     */
+    void requeue() {
+        if (status != DeliveryStatus.DEAD) {
+            throw new IllegalStateException("So entregas DEAD podem voltar para a fila; esta esta " + status);
+        }
+        Instant now = Instant.now();
+        this.status = DeliveryStatus.PENDING;
+        this.attemptCount = 0;
+        this.nextAttemptAt = now;
+        this.lockedUntil = null;
+        touch();
+    }
+
     void cancel() {
         this.status = DeliveryStatus.CANCELLED;
         this.lockedUntil = null;
