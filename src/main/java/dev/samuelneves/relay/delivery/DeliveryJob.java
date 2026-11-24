@@ -14,8 +14,15 @@ public record DeliveryJob(
         String eventType,
         Instant eventCreatedAt,
         Map<String, Object> payload,
-        String endpointUrl
+        String endpointUrl,
+        String endpointSecret
 ) {
+    /** Nao imprime o segredo em logs nem em mensagens de erro. */
+    @Override
+    public String toString() {
+        return "DeliveryJob[deliveryId=" + deliveryId + ", endpointUrl=" + endpointUrl + "]";
+    }
+
     static DeliveryJob of(Delivery delivery) {
         var event = delivery.getEvent();
         return new DeliveryJob(
@@ -24,7 +31,8 @@ public record DeliveryJob(
                 event.getType(),
                 event.getCreatedAt(),
                 event.getPayload(),
-                delivery.getEndpoint().getUrl()
+                delivery.getEndpoint().getUrl(),
+                delivery.getEndpoint().getSecret()
         );
     }
 }

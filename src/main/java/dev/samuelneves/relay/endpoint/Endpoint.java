@@ -1,5 +1,6 @@
 package dev.samuelneves.relay.endpoint;
 
+import dev.samuelneves.relay.signing.WebhookSignature;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -30,6 +31,10 @@ public class Endpoint {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    // Usado para assinar as entregas. Nunca sai na API, exceto uma vez, no cadastro
+    @Column(nullable = false, length = 100)
+    private String secret;
+
     protected Endpoint() {
         // exigido pelo JPA
     }
@@ -38,6 +43,7 @@ public class Endpoint {
         this.url = url;
         this.eventTypes = new ArrayList<>(eventTypes);
         this.createdAt = Instant.now();
+        this.secret = WebhookSignature.newSecret();
     }
 
     public boolean isSubscribedTo(String eventType) {
@@ -53,4 +59,5 @@ public class Endpoint {
     public List<String> getEventTypes() { return List.copyOf(eventTypes); }
     public boolean isActive() { return active; }
     public Instant getCreatedAt() { return createdAt; }
+    public String getSecret() { return secret; }
 }

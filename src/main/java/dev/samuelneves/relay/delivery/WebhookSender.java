@@ -1,10 +1,12 @@
 package dev.samuelneves.relay.delivery;
 
+import dev.samuelneves.relay.signing.WebhookSignature;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -19,8 +21,11 @@ public class WebhookSender {
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(5);
 
     private final RestClient restClient;
+    private final JsonMapper jsonMapper;
 
-    public WebhookSender() {
+    public WebhookSender(JsonMapper jsonMapper) {
+        this.jsonMapper = jsonMapper;
+
         // Sem timeout, um destino lento prenderia o worker indefinidamente
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(CONNECT_TIMEOUT);
@@ -31,13 +36,20 @@ public class WebhookSender {
     public SendResult send(DeliveryJob job) {
         long start = System.nanoTime();
         try {
+            // Serializamos nos mesmos, em vez de deixar o RestClient fazer:
+            // a assinatura tem que ser calculada exatamente sobre os bytes enviados
+            byte[] body = jsonMapper.writeValueAsBytes(
+                    new WebhookMessage(job.eventId(), job.eventType(), job.eventCreatedAt(), job.payload()));
+            long timestamp = Instant.now().getEpochSecond();
+
             int status = restClient.post()
                     .uri(job.endpointUrl())
                     .contentType(MediaType.APPLICATION_JSON)
                     // O destino usa este id para ignorar entregas repetidas (idempotencia)
                     .header("X-Relay-Event-Id", job.eventId().toString())
                     .header("X-Relay-Event-Type", job.eventType())
-                    .body(new WebhookMessage(job.eventId(), job.eventType(), job.eventCreatedAt(), job.payload()))
+                    .header(WebhookSignature.HEADER, WebhookSignature.header(job.endpointSecret(), timestamp, body))
+                    .body(body)
                     // exchange devolve o status sem lancar excecao em 4xx/5xx:
                     // erro do destino e um resultado a registrar, nao uma falha do Relay
                     .exchange((request, response) -> response.getStatusCode().value());

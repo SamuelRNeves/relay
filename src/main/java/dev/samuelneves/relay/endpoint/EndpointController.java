@@ -22,7 +22,7 @@ public class EndpointController {
     }
 
     @PostMapping
-    public ResponseEntity<EndpointResponse> create(@Valid @RequestBody CreateEndpointRequest request) {
+    public ResponseEntity<EndpointCreatedResponse> create(@Valid @RequestBody CreateEndpointRequest request) {
         Endpoint saved = repository.save(new Endpoint(request.url(), request.eventTypes()));
 
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
@@ -30,7 +30,7 @@ public class EndpointController {
                 .buildAndExpand(saved.getId())
                 .toUri();
 
-        return ResponseEntity.created(location).body(EndpointResponse.from(saved));
+        return ResponseEntity.created(location).body(EndpointCreatedResponse.from(saved));
     }
 
     @GetMapping
